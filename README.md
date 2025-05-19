@@ -323,7 +323,7 @@ type E1 = {
 	send?(msg: any): void
 }
 
-class Test extends Event<E1>() {
+class Test extends Event<E1> {
 	constructor() {
 		super()
 	}
