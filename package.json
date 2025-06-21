@@ -1,6 +1,6 @@
 {
 	"name": "@yishu/event",
-	"version": "1.0.0-beta.1",
+	"version": "1.0.0",
 	"type": "module",
 	"main": "./dist/index.es.js",
 	"types": "./dist/index.es.d.ts",
@@ -15,7 +15,7 @@
 		"*.d.ts",
 		"README.md"
 	],
-	"description": "一个事件控制器模块",
+	"description": "一个发布订阅模块",
 	"keywords": [
 		"yishu",
 		"@yishu",
