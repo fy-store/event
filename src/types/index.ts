@@ -1,13 +1,21 @@
 import type Event from '../index.js'
 
-export type GetParams<T> = T extends (...args: infer P) => any ? P : never
+interface EventCallback {
+	(from: 'emit', type: 'notExist' | 'execError', eventName: string | symbol, args: any[]): void
+	(from: 'emitAwait', type: 'notExist' | 'execError', eventName: string | symbol, args: any[]): void
+	(from: 'emitLineUp', type: 'notExist', eventName: string | symbol, args: any[]): void
+	(from: 'emitLineUpCaptureErr', type: 'notExist', eventName: string | symbol, args: any[]): void
+	(from: 'off', type: 'notExist', eventName: string | symbol, ref: symbol | Callback): void
+}
 
 /** 配置选项 */
 export interface Options<E extends EventMapOption<E>> {
 	/** 事件配置对象, key 为事件名, 支持 symbol */
-	eventMap?: E
+	events?: E
 	/** 实例上下文, 通过该钩子可以最大限度操作 EventBus 的实例 */
 	ctx?: (this: Event<E>, ctx: EventCtx<E, EventMap<E>>) => void
+	onError?: EventCallback
+	onWarning?: EventCallback
 }
 
 /** 事件配置对象, key 为事件名, 支持 symbol */
@@ -18,7 +26,7 @@ export type EventMapOption<T> = {
 }
 
 /** 事件回调函数 */
-export interface Callback<Self = any, Return = any> {
+export interface Callback<Self = Event<any>, Return = any> {
 	(this: Self, ...args: any[]): Return
 }
 

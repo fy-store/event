@@ -1,6 +1,6 @@
 # 说明
 
-一个事件控制器模块
+一个发布订阅模块
 
 ## 安装
 
@@ -66,7 +66,7 @@ const event = new Event([options])
 ```
 
 -   options 配置对象 [可选]
-    -   eventMap 事件配置, 接收一个对象 [可选]
+    -   events 事件配置, 接收一个对象 [可选]
     -   ctx 实例上下文 hook, 接收一个函数 [可选]
 
 事件中的函数 this 默认绑定为实例对象, 如果你希望使用 this 来获取实例, 请使用普通函数, 而非箭头函数
@@ -74,20 +74,8 @@ const event = new Event([options])
 ```js
 const event = new Event({
 	events: {
-		/** 简写注册事件 */
-		a(ctx) {},
-
-		/** 数组形式注册多个事件 */
-		b: [(ctx) => {}, (ctx) => {}],
-
-		/** 数组对象形式完整配置注册多个事件 */
-		c: [
-			{
-				fn: (ctx) => {},
-				once: true, // 是否只执行一次
-				sign: Symbol('自定义标识符')
-			}
-		]
+		/** 注册事件 */
+		a(ctx) {}
 	},
 
 	/** 实例上下文 hook */
@@ -101,8 +89,6 @@ const event = new Event({
 	}
 })
 ```
-
-## 实例属性
 
 ## 原型方法
 
@@ -148,7 +134,7 @@ symbol 唯一标识, 后续可用该标识移除回调
 **语法**
 
 ```
-event.emit(eventName [,arg1, arg2, arg3, ...argN])
+event.emit(eventName [, arg1, arg2, arg3, ...argN])
 ```
 
 -   eventName 需要触发的事件的名称
@@ -158,7 +144,7 @@ event.emit(eventName [,arg1, arg2, arg3, ...argN])
 
 this
 
-### emitAwait
+### emitWait
 
 触发指定事件, 并返回一个 promise, 事件所有回调完成, promise resolve
 
@@ -166,12 +152,12 @@ this
 
 -   `emit` 触发事件, 不等待回调完成
 
--   `emitAwait` 触发事件, 等待所有回调完成, promise resolve
+-   `emitWait` 触发事件, 等待所有回调完成(并发), promise resolve
 
 **语法**
 
 ```
-await event.emitAwait(eventName [,arg1, arg2, arg3, ...argN])
+await event.emitWait(eventName [, arg1, arg2, arg3, ...argN])
 ```
 
 -   eventName 需要触发的事件的名称
@@ -180,6 +166,56 @@ await event.emitAwait(eventName [,arg1, arg2, arg3, ...argN])
 **返回值**
 
 Promise.allSettled() 返回值
+
+### emitLineUp
+
+触发指定事件, 并返回一个 promise, 事件所有回调完成, promise resolve
+
+遇到错误将立即抛出, 错误将中断后续回调执行
+
+-   与 `emit` 区别
+
+-   `emit` 触发事件, 不等待回调完成
+
+-   `emitLineUp` 触发事件, 等待所有回调完成(顺序执行), promise resolve
+
+**语法**
+
+```
+await event.emitLineUp(eventName [, arg1, arg2, arg3, ...argN])
+```
+
+-   eventName 需要触发的事件的名称
+-   arg 需要传递的事件参数
+
+**返回值**
+
+any[] 返回值
+
+### emitLineUpCaptureErr
+
+触发指定事件, 并返回一个 promise, 事件所有回调完成, promise resolve
+
+遇到错误将捕获, 不影响后续回调执行
+
+-   与 `emit` 区别
+
+-   `emit` 触发事件, 不等待回调完成
+
+-   `emitLineUpCaptureErr` 触发事件, 等待所有回调完成(顺序执行), promise resolve
+
+**语法**
+
+```
+await event.emitLineUpCaptureErr(eventName [, arg1, arg2, arg3, ...argN])
+```
+
+-   eventName 需要触发的事件的名称
+-   arg 需要传递的事件参数
+
+**返回值**
+
+回调返回值包装后的数组
 
 ### off
 
@@ -286,30 +322,18 @@ const event = new Event({
 
 ## ts 类型支持
 
-导入类型
-
-```ts
-import type { EventCtx } from '@yishu/event'
-```
-
-使用
-
-```ts
-type A = EventCtx
-```
-
 自定义事件类型
 
 示例 1
 
 ```ts
-type E1 = {
+type E = {
 	sum?(a: number, b: number): number
 	set?(str: 'a' | 'b'): string
 	send?(msg: any): void
 }
 
-const event = new Event<E1>()
+const event = new Event<E>()
 event.on('sum', (a, b) => {}) // 类型推导
 event.emit('sum', 1, 2) // 类型推导
 ```
@@ -317,13 +341,13 @@ event.emit('sum', 1, 2) // 类型推导
 示例 2
 
 ```ts
-type E1 = {
+type E = {
 	sum?(a: number, b: number): number
 	set?(str: 'a' | 'b'): string
 	send?(msg: any): void
 }
 
-class Test extends Event<E1> {
+class Test extends Event<E> {
 	constructor() {
 		super()
 	}
@@ -351,7 +375,7 @@ export interface E {
 import Event from '@yishu/event'
 
 /**
- * 直接树形在文档注释中
+ * 直接书写在文档注释中
  * @type {Event<{ sum: (a: number, b: number) => void }>}
  */
 const event1 = new Event()

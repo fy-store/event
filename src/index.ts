@@ -1,35 +1,45 @@
-import type {
-	EventMapOption,
-	Options,
-	Callback,
-	CallbackOptions,
-	OnOptions,
-	CallbackInfo,
-	EventMap
-} from './types/index.js'
+import type { EventMapOption, Options, Callback, OnOptions, CallbackInfo, EventMap } from './types/index.js'
 import { isObj } from './utils/isObj/index.js'
 import { isString } from './utils/isString/index.js'
 import { isSymbol } from './utils/isSymbol/index.js'
 import { isFunction } from './utils/isFunction/index.js'
-import { isArray } from './utils/isArray/index.js'
 import { isUndefined } from './utils/isUndefined/index.js'
+import { logError, logWarn } from './utils/log/index.js'
 
 class Event<E extends EventMapOption<E>> {
 	#eventMap = Object.create(null) as EventMap<E>
+	#logError: Options<E>['onError']
+	#logWarn: Options<E>['onWarning']
 
 	/**
-	 * 事件控制器
+	 * 一个发布订阅模块
 	 * @param options 配置选项
 	 */
 	constructor(options?: Options<E>) {
-		const { eventMap = Object.create(null), ctx } = options ?? {}
-		if (!isObj(eventMap)) {
+		const { events = Object.create(null), ctx, onError, onWarning } = options ?? {}
+		if (!isObj(events)) {
 			throw new TypeError('events must be an object')
 		}
 
-		const eventMapKeys = Reflect.ownKeys(eventMap)
+		if (!isUndefined(onError)) {
+			if (isFunction(onError)) {
+				this.#logError = onError
+			} else {
+				throw new TypeError('options.onError must be a function')
+			}
+		}
+
+		if (!isUndefined(onWarning)) {
+			if (isFunction(onWarning)) {
+				this.#logWarn = onWarning
+			} else {
+				throw new TypeError('options.onWarning must be a function')
+			}
+		}
+
+		const eventMapKeys = Reflect.ownKeys(events)
 		eventMapKeys.forEach((key) => {
-			const eventOption: EventMapOption<E> = eventMap[key]
+			const eventOption: EventMapOption<E> = events[key]
 			let callbackInfoList: CallbackInfo[]
 			if (isFunction<Callback>(eventOption)) {
 				callbackInfoList = [
@@ -39,33 +49,8 @@ class Event<E extends EventMapOption<E>> {
 						sign: Symbol()
 					}
 				]
-			} else if (isArray(eventOption)) {
-				callbackInfoList = eventOption.map((it, i) => {
-					if (isFunction<Callback>(it)) {
-						return {
-							once: false,
-							fn: it,
-							sign: Symbol()
-						}
-					} else if (isObj<CallbackOptions>(it)) {
-						if (!(isSymbol(it.sign) || isUndefined(it.sign))) {
-							throw new TypeError(
-								`options.eventMap${String(key)}[${i}].sign must be a symbol or undefined`
-							)
-						}
-						if (!isFunction(it.fn)) {
-							throw new TypeError(`options.eventMap${String(key)}[${i}].fn must be a function`)
-						}
-						return {
-							once: !!it.once,
-							fn: it.fn,
-							sign: it.sign ?? Symbol()
-						}
-					}
-					throw new TypeError(`options.eventMap${String(key)} must be a function or object[]`)
-				})
 			} else {
-				throw new TypeError(`options.eventMap${String(key)} must be a function or object[]`)
+				throw new TypeError(`options.events.${String(key)} must be a function`)
 			}
 
 			// @ts-ignore
@@ -186,7 +171,11 @@ class Event<E extends EventMapOption<E>> {
 	emit<K extends keyof E>(this: Event<E>, eventName: string | symbol, ...args: Parameters<E[K]>) {
 		const callbackInfoArr = this.#eventMap[eventName]
 		if (!callbackInfoArr) {
-			logWarn(`EventBus(warn): eventName -> '${String(eventName)}' is not exist`)
+			if (this.#logWarn) {
+				this.#logWarn('emit', 'notExist', eventName, args)
+			} else {
+				logWarn(`EventBus(warn): eventName -> '${String(eventName)}' is not exist`)
+			}
 			return this
 		}
 
@@ -195,11 +184,16 @@ class Event<E extends EventMapOption<E>> {
 			try {
 				fn.call(this, ...args)
 			} catch (error) {
-				logError(error)
-			}
-			if (once) {
-				callbackInfoArr.splice(i, 1)
-				i--
+				if (this.#logError) {
+					this.#logError('emit', 'execError', eventName, args)
+				} else {
+					logError(error)
+				}
+			} finally {
+				if (once) {
+					callbackInfoArr.splice(i, 1)
+					i--
+				}
 			}
 		}
 
@@ -210,29 +204,33 @@ class Event<E extends EventMapOption<E>> {
 	}
 
 	/**
-	 * 触发指定事件
+	 * 触发指定事件, 返回一个 Promise, 所有回调敲定后 resolve()
 	 * @param eventName 事件名称
 	 * @param args 参数列表
 	 */
-	emitAwait<K extends keyof E>(
+	emitWait<K extends keyof E>(
 		this: Event<E>,
 		eventName: K,
 		...args: Parameters<E[K]>
 	): Promise<PromiseSettledResult<any>[]>
 	/**
-	 * 触发指定事件
+	 * 触发指定事件, 返回一个 Promise, 所有回调敲定后 resolve()
 	 * @param eventName 事件名称
 	 * @param args 参数列表
 	 */
-	emitAwait<K extends keyof E>(
+	emitWait<K extends keyof E>(
 		this: Event<E>,
 		eventName: string | symbol,
 		...args: Parameters<E[K]>
 	): Promise<PromiseSettledResult<any>[]>
-	emitAwait<K extends keyof E>(this: Event<E>, eventName: string | symbol, ...args: Parameters<E[K]>) {
+	emitWait<K extends keyof E>(this: Event<E>, eventName: string | symbol, ...args: Parameters<E[K]>) {
 		const callbackInfoArr = this.#eventMap[eventName]
 		if (!callbackInfoArr) {
-			logWarn(`EventBus(warn): eventName -> '${String(eventName)}' is not exist`)
+			if (this.#logWarn) {
+				this.#logWarn('emitAwait', 'notExist', eventName, args)
+			} else {
+				logWarn(`EventBus(warn): eventName -> '${String(eventName)}' is not exist`)
+			}
 			return Promise.allSettled([])
 		}
 
@@ -245,6 +243,11 @@ class Event<E extends EventMapOption<E>> {
 						const result = await fn.call(this, ...args)
 						resolve(result)
 					} catch (error) {
+						if (this.#logError) {
+							this.#logError('emitAwait', 'execError', eventName, args)
+						} else {
+							logError(error)
+						}
 						reject(error)
 					}
 				})
@@ -260,6 +263,127 @@ class Event<E extends EventMapOption<E>> {
 			delete this.#eventMap[eventName]
 		}
 		return Promise.allSettled(task)
+	}
+
+	/**
+	 * 触发指定事件, 按照注册的先后顺序排队执行
+	 * - 遇到返回 Promise 的 callback 将进行等待
+	 * - 遇到异常将中断执行, 并立即抛出
+	 * @param eventName 事件名称
+	 * @param args 参数列表
+	 * @returns 回调返回值数组
+	 */
+	async emitLineUp<K extends keyof E>(this: Event<E>, eventName: K, ...args: Parameters<E[K]>): Promise<any[]>
+	/**
+	 * 触发指定事件, 返回一个 Promise, 所有回调敲定后 resolve()
+	 * @param eventName 事件名称
+	 * @param args 参数列表
+	 */
+	async emitLineUp<K extends keyof E>(
+		this: Event<E>,
+		eventName: string | symbol,
+		...args: Parameters<E[K]>
+	): Promise<any[]>
+	async emitLineUp<K extends keyof E>(this: Event<E>, eventName: string | symbol, ...args: Parameters<E[K]>) {
+		const callbackInfoArr = this.#eventMap[eventName]
+		if (!callbackInfoArr) {
+			if (this.#logWarn) {
+				this.#logWarn('emitLineUp', 'notExist', eventName, args)
+			} else {
+				logWarn(`EventBus(warn): eventName -> '${String(eventName)}' is not exist`)
+			}
+			return Promise.allSettled([])
+		}
+
+		const task: any[] = []
+		try {
+			for (let i = 0; i < callbackInfoArr.length; i++) {
+				const { fn, once } = callbackInfoArr[i]
+				if (once) {
+					callbackInfoArr.splice(i, 1)
+					i--
+				}
+				task.push(await fn.call(this, ...args))
+			}
+		} catch (error) {
+			throw error
+		} finally {
+			if (!callbackInfoArr.length) {
+				delete this.#eventMap[eventName]
+			}
+		}
+
+		return task
+	}
+
+	/**
+	 * 触发指定事件, 按照注册的先后顺序排队执行
+	 * - 遇到返回 Promise 的 callback 将进行等待
+	 * - 遇到异常将捕获异常, 然后执行下一个回调
+	 * @param eventName 事件名称
+	 * @param args 参数列表
+	 * @returns 回调返回值包装后的数组
+	 */
+	async emitLineUpCaptureErr<K extends keyof E>(
+		this: Event<E>,
+		eventName: K,
+		...args: Parameters<E[K]>
+	): Promise<({ status: 'fulfilled'; value: any } | { status: 'rejected'; reason: any })[]>
+	/**
+	 * 触发指定事件, 按照注册的先后顺序排队执行
+	 * - 遇到返回 Promise 的 callback 将进行等待
+	 * - 遇到异常将捕获异常, 然后执行下一个回调
+	 * @param eventName 事件名称
+	 * @param args 参数列表
+	 * @returns 回调返回值包装后的数组
+	 */
+	async emitLineUpCaptureErr<K extends keyof E>(
+		this: Event<E>,
+		eventName: string | symbol,
+		...args: Parameters<E[K]>
+	): Promise<({ status: 'fulfilled'; value: any } | { status: 'rejected'; reason: any })[]>
+	async emitLineUpCaptureErr<K extends keyof E>(
+		this: Event<E>,
+		eventName: string | symbol,
+		...args: Parameters<E[K]>
+	) {
+		const callbackInfoArr = this.#eventMap[eventName]
+		if (!callbackInfoArr) {
+			if (this.#logWarn) {
+				this.#logWarn('emitAwait', 'notExist', eventName, args)
+			} else {
+				logWarn(`EventBus(warn): eventName -> '${String(eventName)}' is not exist`)
+			}
+			return Promise.allSettled([])
+		}
+
+		const task: ({ status: 'fulfilled'; value: any } | { status: 'rejected'; reason: any })[] = []
+		for (let i = 0; i < callbackInfoArr.length; i++) {
+			const { fn, once } = callbackInfoArr[i]
+
+			try {
+				const result = await fn.call(this, ...args)
+				task.push({
+					status: 'fulfilled',
+					value: result
+				})
+			} catch (error) {
+				task.push({
+					status: 'rejected',
+					reason: error
+				})
+			} finally {
+				if (once) {
+					callbackInfoArr.splice(i, 1)
+					i--
+				}
+			}
+		}
+
+		if (!callbackInfoArr.length) {
+			delete this.#eventMap[eventName]
+		}
+		return task
 	}
 
 	/**
@@ -282,7 +406,11 @@ class Event<E extends EventMapOption<E>> {
 	off<K extends keyof E>(eventName: K, ref: symbol | Callback): this {
 		const callbackInfoArr = this.#eventMap[eventName]
 		if (!callbackInfoArr) {
-			logWarn(`EventBus(warn): eventName -> '${String(eventName)}' is not exist`)
+			if (this.#logWarn) {
+				this.#logWarn('off', 'notExist', eventName as string | symbol, ref)
+			} else {
+				logWarn(`EventBus(warn): eventName -> '${String(eventName)}' is not exist`)
+			}
 			return this
 		}
 
@@ -403,27 +531,6 @@ class Event<E extends EventMapOption<E>> {
 		return false
 	}
 }
-
-function logWarn(...data: any[]) {
-	data[0] = `\x1b[33m${String(data[0])} \x1B[0m`
-	log.warn(...data)
-}
-
-function logError(...data: any[]) {
-	data[0] = `\x1b[31m${String(data[0])} \x1B[0m`
-	log.error(...data)
-}
-
-const log = (() => {
-	if (typeof console !== 'undefined') {
-		return console
-	} else {
-		return {
-			warn(..._data: any[]) {},
-			error(..._data: any[]) {}
-		}
-	}
-})()
 
 export type * from './types/index.js'
 export default Event
