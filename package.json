@@ -24,7 +24,7 @@
 	],
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/rgbjs/event"
+		"url": "git+https://github.com/rgbjs/event.git"
 	},
 	"homepage": "https://github.com/rgbjs/event",
 	"author": "feiYu <feiyucode@gmail.com>",

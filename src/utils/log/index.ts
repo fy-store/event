@@ -14,8 +14,6 @@ export function logWarn(...data: any[]) {
 	log.warn(...data)
 }
 
-export function logError(...data: any[]) {
-	data[0] = `\x1b[31m${String(data[0])} \x1B[0m`
-	log.error(...data)
+export function logError(data: any[]) {
+	throw data
 }
-

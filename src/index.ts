@@ -8,8 +8,8 @@ import { logError, logWarn } from './utils/log/index.js'
 
 class Event<E extends EventMapOption<E>> {
 	#eventMap = Object.create(null) as EventMap<E>
-	#logError: Options<E>['onError']
-	#logWarn: Options<E>['onWarning']
+	#sendError: Options<E>['onError']
+	#sendWarn: Options<E>['onWarning']
 
 	/**
 	 * 一个发布订阅模块
@@ -23,7 +23,7 @@ class Event<E extends EventMapOption<E>> {
 
 		if (!isUndefined(onError)) {
 			if (isFunction(onError)) {
-				this.#logError = onError
+				this.#sendError = onError
 			} else {
 				throw new TypeError('options.onError must be a function')
 			}
@@ -31,7 +31,7 @@ class Event<E extends EventMapOption<E>> {
 
 		if (!isUndefined(onWarning)) {
 			if (isFunction(onWarning)) {
-				this.#logWarn = onWarning
+				this.#sendWarn = onWarning
 			} else {
 				throw new TypeError('options.onWarning must be a function')
 			}
@@ -160,34 +160,37 @@ class Event<E extends EventMapOption<E>> {
 	 * 触发指定事件
 	 * @param eventName 事件名称
 	 * @param args 参数列表
+	 * - 遇到异常将进行捕获, 并在事件触发完毕后抛出, 通过 onError 可进行自定义
 	 */
 	emit<K extends keyof E>(this: Event<E>, eventName: K, ...args: Parameters<E[K]>): this
 	/**
 	 * 触发指定事件
 	 * @param eventName 事件名称
 	 * @param args 参数列表
+	 * - 遇到异常将进行捕获, 并在事件触发完毕后抛出, 通过 onError 可进行自定义
 	 */
 	emit<K extends keyof E>(this: Event<E>, eventName: string | symbol, ...args: Parameters<E[K]>): this
 	emit<K extends keyof E>(this: Event<E>, eventName: string | symbol, ...args: Parameters<E[K]>) {
 		const callbackInfoArr = this.#eventMap[eventName]
 		if (!callbackInfoArr) {
-			if (this.#logWarn) {
-				this.#logWarn('emit', 'notExist', eventName, args)
+			if (this.#sendWarn) {
+				this.#sendWarn('emit', 'notExist', eventName, args)
 			} else {
 				logWarn(`EventBus(warn): eventName -> '${String(eventName)}' is not exist`)
 			}
 			return this
 		}
 
+		const errorList: any[] = []
 		for (let i = 0; i < callbackInfoArr.length; i++) {
 			const { fn, once } = callbackInfoArr[i]
 			try {
 				fn.call(this, ...args)
 			} catch (error) {
-				if (this.#logError) {
-					this.#logError('emit', 'execError', eventName, args)
+				if (this.#sendError) {
+					this.#sendError('emit', 'execError', eventName, args)
 				} else {
-					logError(error)
+					errorList.push(error)
 				}
 			} finally {
 				if (once) {
@@ -199,6 +202,9 @@ class Event<E extends EventMapOption<E>> {
 
 		if (!callbackInfoArr.length) {
 			delete this.#eventMap[eventName]
+		}
+		if (errorList.length) {
+			logError(errorList)
 		}
 		return this
 	}
@@ -226,8 +232,8 @@ class Event<E extends EventMapOption<E>> {
 	emitWait<K extends keyof E>(this: Event<E>, eventName: string | symbol, ...args: Parameters<E[K]>) {
 		const callbackInfoArr = this.#eventMap[eventName]
 		if (!callbackInfoArr) {
-			if (this.#logWarn) {
-				this.#logWarn('emitAwait', 'notExist', eventName, args)
+			if (this.#sendWarn) {
+				this.#sendWarn('emitAwait', 'notExist', eventName, args)
 			} else {
 				logWarn(`EventBus(warn): eventName -> '${String(eventName)}' is not exist`)
 			}
@@ -243,10 +249,8 @@ class Event<E extends EventMapOption<E>> {
 						const result = await fn.call(this, ...args)
 						resolve(result)
 					} catch (error) {
-						if (this.#logError) {
-							this.#logError('emitAwait', 'execError', eventName, args)
-						} else {
-							logError(error)
+						if (this.#sendError) {
+							this.#sendError('emitAwait', 'execError', eventName, args)
 						}
 						reject(error)
 					}
@@ -287,8 +291,8 @@ class Event<E extends EventMapOption<E>> {
 	async emitLineUp<K extends keyof E>(this: Event<E>, eventName: string | symbol, ...args: Parameters<E[K]>) {
 		const callbackInfoArr = this.#eventMap[eventName]
 		if (!callbackInfoArr) {
-			if (this.#logWarn) {
-				this.#logWarn('emitLineUp', 'notExist', eventName, args)
+			if (this.#sendWarn) {
+				this.#sendWarn('emitLineUp', 'notExist', eventName, args)
 			} else {
 				logWarn(`EventBus(warn): eventName -> '${String(eventName)}' is not exist`)
 			}
@@ -349,8 +353,8 @@ class Event<E extends EventMapOption<E>> {
 	) {
 		const callbackInfoArr = this.#eventMap[eventName]
 		if (!callbackInfoArr) {
-			if (this.#logWarn) {
-				this.#logWarn('emitAwait', 'notExist', eventName, args)
+			if (this.#sendWarn) {
+				this.#sendWarn('emitAwait', 'notExist', eventName, args)
 			} else {
 				logWarn(`EventBus(warn): eventName -> '${String(eventName)}' is not exist`)
 			}
@@ -406,8 +410,8 @@ class Event<E extends EventMapOption<E>> {
 	off<K extends keyof E>(eventName: K, ref: symbol | Callback): this {
 		const callbackInfoArr = this.#eventMap[eventName]
 		if (!callbackInfoArr) {
-			if (this.#logWarn) {
-				this.#logWarn('off', 'notExist', eventName as string | symbol, ref)
+			if (this.#sendWarn) {
+				this.#sendWarn('off', 'notExist', eventName as string | symbol, ref)
 			} else {
 				logWarn(`EventBus(warn): eventName -> '${String(eventName)}' is not exist`)
 			}
